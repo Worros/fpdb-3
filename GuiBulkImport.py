@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """GuiBulkImport module for FPDB bulk import functionality.
 
 Copyright 2008-2011 Steffen Schaumburg
@@ -15,26 +17,30 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 In the "official" distribution you can find the license in agpl-3.0.txt.
 """
 
+import L10n
+_ = L10n.get_translation()
+
 #    Standard Library modules
 import os
 import sys
 from pathlib import Path
 from time import time
 from typing import Any
+from optparse import OptionParser
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import (
-    QFileDialog,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QTreeWidget,
-    QTreeWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+#from PyQt5.QtWidgets import (
+#    QFileDialog,
+#    QHBoxLayout,
+#    QLabel,
+#    QLineEdit,
+#    QPushButton,
+#    QTreeWidget,
+#    QTreeWidgetItem,
+#    QVBoxLayout,
+#    QWidget,
+#)
 
 import Configuration
 import Importer
@@ -42,14 +48,11 @@ from loggingFpdb import get_logger
 
 #    fpdb/FreePokerTools modules
 
-
-if __name__ == "__main__":
-    Configuration.set_logfile("fpdb-log.txt")
 # logging has been set up in fpdb.py or HUD_main.py, use their settings:
 log = get_logger("gui_bulk_import")
 
 
-class GuiBulkImport(QWidget):
+class GuiBulkImport():
     """Widget for bulk importing hand history files."""
 
     # Configuration  -  update these as preferred:
@@ -122,12 +125,12 @@ class GuiBulkImport(QWidget):
 
     def __init__(self, settings: Any, config: Any, sql: Any = None, parent: Any = None) -> None:
         """Initialize the bulk import widget."""
-        QWidget.__init__(self, parent)
         self.settings = settings
         self.config = config
 
         self.importer = Importer.Importer(self, self.settings, config, sql, self)
 
+        QWidget.__init__(self, parent)
         self.setLayout(QVBoxLayout())
 
         # Configured import directories
@@ -190,18 +193,84 @@ class GuiBulkImport(QWidget):
             self.importDir.setText(newdir)
 
 
-if __name__ == "__main__":
-    config = Configuration.Config()
-    settings = {}
-    if os.name == "nt":
-        settings["os"] = "windows"
+def main(argv=None):
+    """main can also be called in the python interpreter, by supplying the command line as the argument."""
+    if argv is None:
+        argv = sys.argv[1:]
+
+    def destroy(*args):  # call back for terminating the main eventloop
+        gtk.main_quit()
+
+    parser = OptionParser()
+    parser.add_option("-f", "--file", dest="filename", metavar="FILE", default=None,
+                    help=_("Input file"))
+    parser.add_option("-c", "--convert", dest="filtername", default=None, metavar="FILTER",
+                    help=_("Site")+ " (Absolute, Merge, Everleaf, Full Tilt Poker, PokerStars, ...)") #TODO: dynamically generate list
+    parser.add_option("-x", "--failOnError", action="store_true", default=False,
+                    help=_("If this option is used it quits with an extended error message if it encounters any error"))
+    parser.add_option("-u", "--usage", action="store_true", dest="usage", default=False,
+                    help=_("Print some useful one liners"))
+    parser.add_option("-s", "--starsarchive", action="store_true", dest="starsArchive", default=False,
+                    help=_("Do the required conversion for %s archive format (ie. as provided by support)") % "PokerStars")
+    parser.add_option("-F", "--ftparchive", action="store_true", dest="ftpArchive", default=False,
+                    help=_("Do the required conversion for %s archive format (ie. as provided by support)") % "Full Tilt Poker")
+    parser.add_option("-t", "--testdata", action="store_true", dest="testData", default=False,
+                    help=_("Generate and print test data for regression testing"))
+    parser.add_option("-C", "--configFile", dest="config", default=None, help=_("Specifies a configuration file."))
+    (options, argv) = parser.parse_args(args = argv)
+
+    if options.usage == True:
+        #Print usage examples and exit
+        print(_("USAGE:"))
+        print(('PokerStars ' + _('converter') + ': ./GuiBulkImport.py -c PokerStars -f filename'))
+        print(('Full Tilt  ' + _('converter') + ': ./GuiBulkImport.py -c "Full Tilt Poker" -f filename'))
+        print(('Everleaf   ' + _('converter') + ': ./GuiBulkImport.py -c Everleaf -f filename'))
+        print(('Absolute   ' + _('converter') + ': ./GuiBulkImport.py -c Absolute -f filename'))
+        print(('PartyPoker ' + _('converter') + ': ./GuiBulkImport.py -c PartyPoker -f filename'))
+        sys.exit(0)
+
+    Configuration.set_logfile("GuiBulkImport-log.txt")
+    if options.config:
+        config = Configuration.Config(options.config)
     else:
-        settings["os"] = "linuxmac"
+        config = Configuration.Config()
+
+    settings = {}
+    if os.name == 'nt': settings['os'] = 'windows'
+    else:               settings['os'] = 'linuxmac'
 
     settings.update(config.get_db_parameters())
     settings.update(config.get_import_parameters())
     settings.update(config.get_default_paths())
-    import interlocks
 
-    settings["global_lock"] = interlocks.InterProcessLock(name="fpdb_global_lock")
-    settings["cl_options"] = ".".join(sys.argv[1:])
+    if not options.filename:
+        i = GuiBulkImport(settings, config, None)
+        main_window = gtk.Window()
+        main_window.connect('destroy', destroy)
+        main_window.add(i.vbox)
+        main_window.show()
+        gtk.main()
+    else:
+        if not options.filtername:
+            print(_("You have to select a site with the -c parameter. E.g.:"), "Everleaf   converter: ./GuiBulkImport.py -c Everleaf -f filename")
+        #Do something useful
+        importer = Importer.Importer(False,settings, config, None)
+        # importer.setDropIndexes("auto")
+        importer.setDropIndexes(_("don't drop"))
+        importer.setFailOnError(options.failOnError)
+        importer.setThreads(-1)
+        importer.addBulkImportImportFileOrDir(os.path.expanduser(options.filename), site=options.filtername)
+        importer.setCallHud(False)
+        if options.starsArchive:
+            importer.setStarsArchive(True)
+        if options.ftpArchive:
+            importer.setFTPArchive(True)
+        if options.testData:
+            importer.setPrintTestData(True)
+        (stored, dups, partial, skipped, errs, ttime) = importer.runImport()
+        importer.clearFileList(
+        print(_('Bulk import done: Stored: %d, Duplicates: %d, Partial: %d, Skipped: %d Errors: %d, Time: %s seconds, Stored/second: %.0f')\
+                     % (stored, dups, partial, skipped, errs, ttime, (stored+0.0) / ttime))
+
+if __name__ == '__main__':
+    sys.exit(main())
