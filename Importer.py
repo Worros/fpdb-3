@@ -218,6 +218,16 @@ class Importer:
         """
         self.settings["quiet"] = value
 
+    def setFailOnError(self, value) -> None:
+        """Set mode for importer to fail immediately
+
+        Intended to trigger immediately failure and increase verbosity of information dump
+
+        Args:
+            value: Boolean
+        """
+        self.settings['failOnError'] = value
+
     def setHandsInDB(self, value) -> None:
         """Set the number of hands in the database.
 
